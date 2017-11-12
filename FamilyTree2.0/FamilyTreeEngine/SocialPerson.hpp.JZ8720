@@ -1,0 +1,223 @@
+#pragma once
+
+#include "Person.hpp"
+#include "Family.h"
+#include <memory>
+#include <vector>
+#include <iostream>
+#include <algorithm>
+
+using FamilyPtr = std::weak_ptr<Family>;
+using Families = std::vector<FamilyPtr>;
+        
+class SocialPerson 
+{
+public:
+    SocialPerson() noexcept 
+        : person(std::make_shared<Person>())
+    {
+    }
+
+    SocialPerson(const SocialPerson& orig) noexcept
+    {
+        person = orig.person;
+        personsFamilies = orig.personsFamilies;
+    }
+
+    SocialPerson(Person p) noexcept
+    {
+        setPerson(p);
+    }
+
+    auto getName() const noexcept
+    {
+        return person->getName();
+    }
+
+    auto getSurname() const noexcept
+    {
+        return person->getSurname();
+    }
+
+    auto getBirthdate() const noexcept
+    {
+        return person->getBirthdate();
+    }
+
+    auto getDeathdate() const noexcept
+    {
+        return person->getDeathdate();
+    }
+
+    auto getIsAlive() const noexcept
+    {
+        return person->getIsAlive();
+    }
+
+    auto getPlace() const noexcept
+    {
+        return person->getPlace();
+    }
+
+    PersonPtr getPerson() const noexcept
+    {
+        return person;
+    }
+    void setPerson(Person  p) noexcept
+    {
+        person = std::make_shared<Person>(p);
+    }
+        
+    PersonPtr operator*() const noexcept
+    {
+        return person;
+    }
+    
+    std::shared_ptr<Person> operator->() const noexcept
+    {
+        return person;
+    }
+    
+    std::shared_ptr<Person> get() const noexcept
+    {
+        return person;
+    }
+   
+    auto getNumOfRelatedFamilies() const noexcept
+    {
+        return personsFamilies.size();
+    }
+    
+    void addRelatedFamily(FamilyPtr f) noexcept
+    {
+        personsFamilies.push_back(f);
+    }
+    
+    bool isMember(FamilyPtr f) const noexcept
+    {
+        if (auto ff = f.lock())
+        {
+            for (const auto& e : personsFamilies)
+            {
+                if (e.lock() == ff) return true;
+            }
+        }
+        return false;
+    }
+    Families getRelatedFamilies() const noexcept
+    {
+        return personsFamilies;
+    }
+
+    auto getKids() noexcept
+    {
+        auto retval = People();
+        for (const auto& e : personsFamilies)
+        {
+            if (auto family = e.lock())
+            {
+                if (family->isPartner(*this))
+                {
+                    auto kids = family->getKids();
+                    retval.insert(retval.end(), kids.begin(), kids.end());
+                }
+            }
+        }
+        return retval;
+    }
+
+    auto getParents() noexcept
+    {
+        for (const auto& e : personsFamilies)
+        {
+            if (auto family = e.lock())
+            {
+                if (family->isKid(*this))
+                {
+                    return family->getPartners();
+                }
+            }
+        }
+        return People();
+    }
+    
+    auto getPartners() noexcept
+    {
+        People retval;
+        for (const auto& e : personsFamilies)
+        {
+            if (auto family = e.lock())
+            {
+                if (family->isPartner(*this))
+                {
+                    const auto& partners = family->getPartners();
+                    
+                    for (const auto& p : partners)
+                    {
+                        if (p == person) continue;
+                        retval.push_back(p);
+                    }
+                }
+            }
+        }
+        return retval;
+    }
+    
+    auto getAncestors() const noexcept
+    {
+        
+    }
+    
+    auto getSiblings() const noexcept
+    {
+        People retval;
+        for (const auto& e : personsFamilies)
+        {
+            if (auto family = e.lock())
+            {
+                if (family->isKid(*this))
+                {
+                    const auto& partners = family->getKids();
+                    
+                    for (const auto& p : partners)
+                    {
+                        if (p == person) continue;
+                        retval.push_back(p);
+                    }
+                    return retval;
+                }
+            }
+        }
+        return retval;
+    }
+    
+    bool operator==(const SocialPerson& p) const
+    {
+        return person == p.person;// && personsFamilies == p.personsFamilies;
+    }
+    
+    bool operator==(const PersonPtr& p) const
+    {
+        if (auto p2 = p.lock())
+        {
+            return person == p2;
+        }
+        else return false;
+    }
+
+    int calcPosterityWidth()
+    {
+        int posterityWidth = 0;
+        for (auto& kid : getKids())
+        {
+            posterityWidth += kid.calcPosterityWidth();
+        }
+        this->posterityWidth = posterityWidth;
+        return posterityWidth;
+    }
+
+private:
+    mutable int posterityWidth = 0;
+    std::shared_ptr<Person> person;
+    Families personsFamilies;
+};

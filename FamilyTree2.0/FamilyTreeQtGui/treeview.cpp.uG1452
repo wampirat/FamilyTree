@@ -1,0 +1,340 @@
+#include "treeview.h"
+#include "ui_treeview.h"
+#include <iostream>
+#include <string>
+#include "FamilyTreeCalculator.hpp"
+#include <cmath>
+TreeView::TreeView(QWidget *parent) :
+    QDialog(parent),
+    ui(new Ui::TreeView)
+{
+    ui->setupUi(this);
+    qp.translate(1080/2, 1920/2);
+}
+
+TreeView::~TreeView()
+{
+    delete ui;
+}
+QString TreeView::getPersonQString(const std::shared_ptr<SocialPerson>& person)
+{
+    auto name = person->getName();
+    name.append(" ").append(person->getSurname());
+    auto birthdate = person->getBirthdate();
+    auto deathdate = person->getDeathdate();
+    if (birthdate && deathdate)
+    {
+        name.append("\n").append(std::to_string(birthdate));
+        name.append(" - ").append(std::to_string(deathdate));
+    }
+    else if (birthdate)
+    {
+        name.append("\n").append(std::to_string(birthdate));
+    }
+    else if (deathdate)
+    {
+        name.append("\n†").append(std::to_string(deathdate));
+    }
+    if (!deathdate) name.append("\nzam: ").append(person->getPlace());
+    else name.append("\nmpc: ").append(person->getPlace());
+    return QString::fromStdString(name);
+}
+
+std::vector<QRect> TreeView::drawSiblings(int x, auto width, int y, const std::shared_ptr<SocialPerson>& person, int shift)
+{
+    std::vector<QRect> retval;
+    for (const auto& sibling : person->getSiblings())
+    {
+        auto rect = QRect((y + width + shift++)*frameHorizontalDistance+y0, x*frameVeriticalDistance+x0, frameWidth, frameHeight);
+        retval.push_back(rect);
+        //qp.fillRect(rect, Qt::lightGray);
+        //qp.drawRect(rect);
+        qpath.addRect(rect);
+        //qp.drawText(rect, getPersonQString(sibling));
+        addVerticalText(sibling, x, y, width);
+        //qpath.addText(rect.x(), rect.y(), QFont("Arial", 8, 0, false), getPersonQString(sibling));
+    }
+    return retval;
+}
+
+QRect TreeView::drawPerson(int y, auto width, const std::shared_ptr<SocialPerson>& person, int x)
+{
+    if (shouldRelocateDrawing)
+    {
+        std::cout << "RELOCATING" << std::endl;
+        std::cout << "x0 = " << x0 << ", y0 = " << y0 << std::endl;
+        std::cout << "dx = " << dx << ", dy = " << dy << std::endl;
+        dy = probandsRect.x() - ((y+width)*frameHorizontalDistance+y0);
+        dx = probandsRect.y() - (x*frameVeriticalDistance+x0);
+        x0 += dx;
+        y0 += dy;
+
+        std::cout << "x0 F= " << x0 << ", y0 = " << y0 << std::endl;
+        std::cout << "Px = " << probandsRect.x() << ", Py = " << probandsRect.y() << std::endl;
+        std::cout << "x = " << (y+width)*frameHorizontalDistance+y0 << ", y = " << x*frameVeriticalDistance+x0 << std::endl;
+        std::cout << "dx = " << dx << ", dy = " << dy << std::endl;
+        shouldRelocateDrawing = false;
+    }
+    auto rect = QRect((y+width)*frameHorizontalDistance+y0, x*frameVeriticalDistance+x0, frameWidth, frameHeight);
+    //qp.fillRect(rect, Qt::white);
+    qpath.addRect(rect);
+    //qp.drawRect(rect);
+
+    qp.drawText(rect, getPersonQString(person));
+    return rect;
+}
+
+std::vector<QRect> TreeView::drawKids(const std::shared_ptr<SocialPerson>& person, int y, int x)
+{
+    std::vector<QRect> kidsRects;
+    for (const auto& kid : person->getKids())
+    {
+        kidsRects.push_back(drawPosterityTree(kid, x, y));
+        y += kid->calcPosterityWidth();
+    }
+    return kidsRects;
+}
+
+std::vector<QRect> TreeView::drawParents(const std::shared_ptr<SocialPerson>& person, int x, int y)
+{
+    std::vector<QRect> parentsRects;
+    int parentNo = 0;
+    for (const auto& parent : person->getParents())
+    {
+        parentsRects.push_back(drawAncestorsTree(parent, x, y, parentNo++));
+        y += parent->calcAncestorsWidth();
+    }
+    return parentsRects;
+}
+
+void TreeView::drawPartnersConnectionLines(int x, int y, auto width)
+{
+    auto y1 = (y + width)*frameHorizontalDistance+frameWidth + y0;
+    auto y2 = (y + width + 1)*frameHorizontalDistance + y0;
+    QLine line (y1, x*frameVeriticalDistance + mul1*frameHeight/div + x0, y2, x*frameVeriticalDistance + mul1*frameHeight/div + x0);
+    QLine line2(y1, x*frameVeriticalDistance + mul2*frameHeight/div + x0, y2, x*frameVeriticalDistance + mul2*frameHeight/div + x0);
+    addLine(line);
+    addLine(line2);
+}
+
+void TreeView::addVerticalText(auto partner, int x, int y, auto width)
+{
+    QMatrix mat;
+    mat.rotate(270);
+
+    QFont font("Arial" ,10);
+
+    QPainterPath text;
+    QFontMetrics qfm(font);
+
+   // auto rect = QRect((y + width + 1)*frameHorizontalDistance+y0, x*frameVeriticalDistance+x0, frameWidth, frameHeight);
+
+    const auto textX = -y;//(x*frameVeriticalDistance+x0);
+    const auto textY = x;//(y + width + 1)*frameHorizontalDistance+y0;
+    const auto name = QString::fromStdString(partner->getName()+" "+partner->getSurname());
+    const auto date = QString::fromStdString(std::to_string(partner->getBirthdate())+" - "+std::to_string(partner->getDeathdate()));
+    const auto place = QString::fromStdString(partner->getPlace());
+
+    text.addText(textX, textY, font, name);
+    text.addText(textX, textY + qfm.height(), font, date);
+    text.addText(textX, textY + 2 * qfm.height(), font, place);
+
+    text = mat.map(text);
+
+    text.translate(qfm.height(), frameWidth-qfm.averageCharWidth());
+
+    textPath.addPath(text);
+}
+
+void TreeView::drawPartners(int x, const std::shared_ptr<SocialPerson>& person, int y, auto width)
+{
+    if (person->getPartners().size())
+    {
+        auto partner = person->getPartners()[0];
+
+        auto rect = QRect((y + width + 1)*frameHorizontalDistance+y0, x*frameVeriticalDistance+x0, frameWidth, frameHeight);
+        qpath.addRect(rect);
+
+        addVerticalText(partner, rect.x(), rect.y(), width);
+
+        drawPartnersConnectionLines(x, y, width);
+    }
+}
+
+void TreeView::drawPosterityConnectionLines(const std::shared_ptr<SocialPerson>& person, QRect rect, std::vector<QRect> rects)
+{
+    int kidsXConnection;
+    int kidsYConnection;
+
+    if (person->getPartners().size() && person->getKids().size())
+    {
+        kidsYConnection = rect.y() + rect.height()+(frameVeriticalDistance-frameHeight)/2;
+        kidsXConnection = rect.x() + rect.width()+(frameHorizontalDistance-frameWidth)/2;
+        QLine line(kidsXConnection,
+                   kidsYConnection,
+                   kidsXConnection,
+                   rect.y() + rect.height()*mul2/div);
+        addLine(line);
+    }
+    else if (person->getKids().size())
+    {
+        kidsYConnection = rect.y() + rect.height()+(frameVeriticalDistance-frameHeight)/2;
+        kidsXConnection = rect.x() + rect.width()/2;
+        QLine line(kidsXConnection,
+                   kidsYConnection,
+                   kidsXConnection,
+                   rect.y() + rect.height());
+        addLine(line);
+    }
+    for (const QRect& r : rects)
+    {
+        QLine line(r.x() + r.width()/2,
+                   r.y() - (frameVeriticalDistance-frameHeight)/2,
+                   r.x() + r.width()/2,
+                   r.y());
+        QLine connectionLine(r.x() + r.width()/2,
+                             r.y() - (frameVeriticalDistance-frameHeight)/2,
+                             kidsXConnection,
+                             kidsYConnection);
+        addLine(line);
+        addLine(connectionLine);
+    }
+}
+
+void TreeView::addLine(QLine ul)
+{
+    qpath.moveTo(ul.p1());
+    qpath.lineTo(ul.p2());
+}
+
+void TreeView::drawAncestorsConnectionLines(const std::vector<QRect>& parentsRects, const std::vector<QRect>& kidsRects)
+{
+    if (!parentsRects.size()) return;
+    int kidsConnectionX;
+    int kidsConnectionY;
+
+    for (int i = 1; i < parentsRects.size(); ++i)
+    {
+        const QRect p1 = parentsRects[i - 1];
+        const QRect p2 = parentsRects[i];
+        QLine ul(p1.x()+p1.width(),
+                 p1.y()+p1.height()*mul1/div,
+                 p2.x(),
+                 p2.y()+p2.height()*mul1/div);
+        QLine dl(p1.x()+p1.width(),
+                 p1.y()+p1.height()*mul2/div,
+                 p2.x(),
+                 p2.y()+p2.height()*mul2/div);
+        kidsConnectionX = (p1.x()+p1.width()+p2.x())/2;
+        kidsConnectionY = p1.y()+(p1.height()+frameVeriticalDistance)/2;
+        QLine vl((p1.x()+p1.width()+p2.x())/2,
+                 p1.y()+p1.height()*mul2/div,
+                 kidsConnectionX,
+                 kidsConnectionY);
+        addLine(ul);
+        addLine(dl);
+        addLine(vl);
+    }
+    if (parentsRects.size() == 1)
+    {
+        auto p1 = parentsRects[0];
+        kidsConnectionX = p1.x()+p1.width()/2;
+        kidsConnectionY = p1.y()+(p1.height()+frameVeriticalDistance)/2;
+        QLine vl(kidsConnectionX,
+                 p1.y()+p1.height(),
+                 kidsConnectionX,
+                 kidsConnectionY);
+        addLine(vl);
+    }
+    for (const auto& r : kidsRects)
+    {
+        QLine line(r.x() + r.width()/2,
+                   r.y() - (frameVeriticalDistance-frameHeight)/2,
+                   r.x() + r.width()/2,
+                   r.y());
+        QLine connectionLine(r.x() + r.width()/2,
+                             r.y() - (frameVeriticalDistance-frameHeight)/2,
+                             kidsConnectionX,
+                             kidsConnectionY);
+        addLine(line);
+        addLine(connectionLine);
+    }
+}
+
+QRect TreeView::drawAncestorsTree(const std::shared_ptr<SocialPerson>& person, int x, int y, int parentNumber)
+{
+    auto width = (person->calcAncestorsWidth() - 1)/(person->getSiblings().size()+1);
+    QRect rect;
+    std::vector<QRect> kidsRects;
+    std::vector<QRect> parentsRects;
+
+    if (parentNumber)
+    {
+        rect = drawPerson(y, width, person, x);
+        kidsRects = drawSiblings(x, width, y, person, 1);
+    }
+    else
+    {
+        kidsRects = drawSiblings(x, width, y, person, 0);
+        rect = drawPerson(y + person->getSiblings().size(), width, person, x);
+    }
+
+    kidsRects.push_back(rect);
+    parentsRects = drawParents(person, x - 1, y);
+    drawAncestorsConnectionLines(parentsRects, kidsRects);
+    return rect;
+}
+
+QRect TreeView::drawPosterityTree(const std::shared_ptr<SocialPerson>& person, int x, int y)
+{
+    auto width = (person->calcPosterityWidth() - 1)/2;
+
+    QRect rect = drawPerson(y, width, person, x);
+    drawPartners(x, person, y, width);
+    std::vector<QRect> rects = drawKids(person, y, x + 1);
+
+    drawPosterityConnectionLines(person, rect, rects);
+
+    return rect;
+}
+
+void TreeView::paintEvent(QPaintEvent*)
+{
+    qp.begin(this);
+
+    auto people = ftf->getPeople();
+    proband = people[probandIndex];
+
+    if (!proband) return;
+
+    auto ancestorsDepth = proband->calcAncestorsDepth();
+    x0 = (1+ancestorsDepth)*frameVeriticalDistance-frameHeight;
+    y0 = 0;
+    //main
+    auto postY = (proband->calcPosterityWidth() - 1)/2*frameHorizontalDistance;
+    auto ancY = (proband->getSiblings().size()+(proband->calcAncestorsWidth() - 1)/(proband->getSiblings().size()+1))*frameHorizontalDistance;
+    if (postY > ancY) y0 = postY - ancY;
+    y0 += frameHorizontalDistance - frameWidth;
+    probandsRect = drawAncestorsTree(proband);
+    shouldRelocateDrawing = true;
+    probandsRect = drawPosterityTree(proband);
+     shouldRelocateDrawing = false;
+
+    x0 -= dx;
+    y0 -= dy;
+    dx = 0;
+    dy = 0;
+    qp.drawPath(qpath);
+    qp.fillPath(textPath, QBrush(Qt::black));
+    qp.end();
+}
+
+void TreeView::setFamilyTreeFramework(std::shared_ptr<FamilyTreeFramework>& _ftf)
+{
+    ftf = _ftf;
+}
+
+void TreeView::setProband(int index)
+{
+    probandIndex = index;
+}
